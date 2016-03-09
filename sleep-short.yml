@@ -1,0 +1,25 @@
+---
+- name: Playbook to Test Timed Callbacks
+  hosts: all
+  gather_facts: False
+  tasks:
+    - name: Sleep Command 1
+      command: sleep 1
+    - name: Sleep Command 2
+      command: sleep 1
+    - name: Sleep Command 3
+      command: sleep 1
+    - name: Sleep Command 4
+      command: sleep 1
+    - name: Sleep Command 5
+      command: sleep 1
+    - name: Sleep Command 6
+      command: sleep 1
+    - name: Sleep Command 7
+      command: sleep 1
+    - name: Sleep Command 8
+      command: sleep 1
+    - name: Sleep Command 9
+      command: sleep 1
+    - name: Sleep Command 10
+      command: sleep 1
