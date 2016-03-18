@@ -140,7 +140,10 @@ def output_errors(error_list):
     output = ''
 
     for key in error_list:
-        output += "[" + key + "] : " + bcolors.FAIL + error_list[key]['msg'] + bcolors.ENDC + "\n\n"
+        if 'msg' in error_list[key]:
+            output += "[" + key + "] : " + bcolors.FAIL + error_list[key]['msg'] + bcolors.ENDC + "\n\n"
+        else:
+            output += "[" + key + "] : " + bcolors.FAIL + error_list[key] + bcolors.ENDC + "\n\n"
 
     return output
 
@@ -165,8 +168,9 @@ def pretty(stream):
     '''
 
     progress = None
-    started_tasks = 0
+    started_tasks = 1
     error_messages = {}
+    last_event = None
 
     try:
         while True:
@@ -176,27 +180,33 @@ def pretty(stream):
                 if event['tag'] == 'playbook_start':
                     print banner(event['title'])
                     print bcolors.WARNING + "Contains: " + str(json.loads(event['text'])['plays']) + " Play(s)." + bcolors.ENDC
+                    last_event = event['tag']
 
                 elif event['tag'] == 'play_start':
+                    if progress:
+                        progress.next()
+                    started_tasks = 1
                     num_tasks = json.loads(event['text'])['tasks']
-                    print banner(event['title'])
-                    print bcolors.WARNING + "Contains: " + str(json.loads(event['text'])['tasks']) +  \
-                    " Task(s) for " + str(json.loads(event['text'])['hosts']) + " Host(s)." + bcolors.ENDC +  "\n"
+                    if last_event != 'playbook_start':
+                        print "\n" + banner(event['title'])
+                    else:
+                        print banner(event['title'])
+                    print bcolors.WARNING + "Contains: " + str(json.loads(event['text'])['tasks']) +  " Task(s)." + bcolors.ENDC +  "\n"
                     print "TASK(s):"
                     progress = Bar("Processing...", max=num_tasks, suffix=SUFFIX)
                     progress.update()
+                    last_event = event['tag']
 
                 elif event['tag'] == 'task_start':
 
-                    #Don't count fact collection in progress
-                    if event['title'] != 'setup':
+                    if progress:
+                        progress.message = event['title']
+                        progress.update()
+                        if started_tasks > 1:
+                            progress.next()
 
-                        started_tasks = started_tasks + 1
-                        if progress:
-                            progress.message = event['title']
-                            progress.update()
-                            if started_tasks > 1:
-                                progress.next()
+                    started_tasks = started_tasks + 1
+                    last_event = event['tag']
 
                 elif event['tag'] == 'playbook_complete':
                     if progress:
@@ -210,8 +220,12 @@ def pretty(stream):
                             print banner("RUN Errors:")
                             print output_errors(error_messages)
 
+                    last_event = event['tag']
+
                 elif event['tag'] == 'unreachable':
                     error_messages[event['host']] = event['text']
+
+                last_event = event['tag']
 
     except KeyboardInterrupt:
         stream.flush()

@@ -14,7 +14,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from ansible.plugins.callback import CallbackBase
+#from ansible.plugins.callback import CallbackBase
 import json
 import os
 
@@ -45,19 +45,18 @@ class Event(object):
         stream.write(self.serialize() + "\n")
         stream.flush()
 
+#class CallbackModule(CallbackBase):
+class CallbackModule(object):
 
-class CallbackModule(CallbackBase):
-
-    CALLBACK_VERSION = 2.0
-    CALLBACK_TYPE = 'notify'
-    CALLBACK_NAME = 'eventstream'
+    #CALLBACK_VERSION = 2.0
+    #CALLBACK_TYPE = 'notify'
+    #CALLBACK_NAME = 'eventstream'
 
     def __init__(self):
 
         super(CallbackModule, self).__init__()
 
         self.pipe = "/tmp/eventstream"
-        #self.setup_stream()
 
     def setup_stream(self):
 
@@ -69,8 +68,8 @@ class CallbackModule(CallbackBase):
     def close_stream(self):
         self.stream.close()
 
-    def v2_on_any(self, *args, **kwargs):
-       pass
+
+    #v2.x Callback Methods ------------------------------
 
     def v2_runner_on_failed(self, result, ignore_errors=False):
 
@@ -127,20 +126,6 @@ class CallbackModule(CallbackBase):
 
         e.flush(self.stream)
 
-    def v2_runner_on_no_hosts(self, task):
-        pass
-
-    def v2_runner_on_async_poll(self, result):
-        pass
-
-    def v2_runner_on_async_ok(self, result):
-        pass
-
-    def v2_runner_on_async_failed(self, result):
-        pass
-
-    def v2_runner_on_file_diff(self, result, diff):
-        pass
 
     def v2_playbook_on_start(self, playbook):
 
@@ -170,15 +155,6 @@ class CallbackModule(CallbackBase):
         e.flush(self.stream)
 
 
-    def v2_playbook_on_notify(self, result, handler):
-        pass
-
-    def v2_playbook_on_no_hosts_matched(self):
-        pass
-
-    def v2_playbook_on_no_hosts_remaining(self):
-        pass
-
     def v2_playbook_on_task_start(self, task, is_conditional):
 
         #Task Started
@@ -189,30 +165,19 @@ class CallbackModule(CallbackBase):
 
         e.flush(self.stream)
 
-    def v2_playbook_on_cleanup_task_start(self, task):
-        pass
-
-    def v2_playbook_on_handler_task_start(self, task):
-        pass
-
-    def v2_playbook_on_vars_prompt(self, varname, private=True, prompt=None, encrypt=None, confirm=False, salt_size=None, salt=None, default=None):
-        pass
-
-    def v2_playbook_on_setup(self):
-        pass
-
-    def v2_playbook_on_import_for_host(self, result, imported_file):
-        pass
-
-    def v2_playbook_on_not_import_for_host(self, result, missing_file):
-        pass
 
     def v2_playbook_on_play_start(self, play):
 
         vm = play.get_variable_manager()
 
+        task_count = len(play.get_tasks()[0])
+
+        #Add implicit task for fact gathering if appropriate
+        if play.gather_facts or play.gather_facts is None:
+            task_count = task_count + 1
+
         data = {
-            'tasks':len(play.get_tasks()[0]),
+            'tasks':task_count,
             'hosts':len(vm._inventory.get_hosts())
         }
 
@@ -248,20 +213,144 @@ class CallbackModule(CallbackBase):
         self.close_stream()
 
 
-    def v2_on_file_diff(self, result):
-        pass
+    #v1.x Callback Methods ------------------------------
 
-    def v2_playbook_on_include(self, included_file):
-        pass
+    def playbook_on_start(self):
 
-    def v2_playbook_item_on_ok(self, result):
-        pass
+        #Check to see if user supplied named pipe location?
+        #If so, use it.
+        if 'pipe' in self.playbook.extra_vars:
+            self.pipe = self.playbook.extra_vars['pipe']
 
-    def v2_playbook_item_on_failed(self, result):
-        pass
+        self.setup_stream()
 
-    def v2_playbook_item_on_skipped(self, result):
-        pass
+        data = {
+            'plays':len(self.playbook.playbook),
+        }
 
-    def v2_playbook_retry(self, result):
-        pass
+        #Playbook Started
+        e = Event(title='PLAYBOOK: Started',
+                  tag='playbook_start',
+                  alert_type='info',
+                  text=json.dumps(data),
+                  extra_vars=self.playbook.extra_vars)
+
+        e.flush(self.stream)
+
+    def playbook_on_play_start(self, name):
+
+        playbook = self.playbook.playbook[0]
+
+        task_count = 0
+
+        for task in self.play._ds['tasks']:
+            if 'action' in task:
+                task_count = task_count + 1
+
+        #Add implicit task for fact gathering if appropriate
+        if 'gather_facts' in playbook and playbook['gather_facts'] or 'gather_facts' not in playbook:
+           task_count = task_count + 1
+
+        data = {
+            'tasks':task_count
+        }
+
+        #Play Started
+        e = Event(title="PLAY: Started [%s]" % self.play.name,
+                  tag='play_start',
+                  alert_type='info',
+                  text=json.dumps(data),
+                  extra_vars=self.playbook.extra_vars)
+
+        e.flush(self.stream)
+
+    def playbook_on_task_start(self, name, is_conditional):
+
+        #Task Started
+        e = Event(title=name,
+                  tag='task_start',
+                  alert_type='info',
+                  extra_vars=self.playbook.extra_vars)
+
+        e.flush(self.stream)
+
+
+    def runner_on_failed(self, host, res, ignore_errors=False):
+
+        #Task Run Failed for specific Host
+        e = Event(title='TASK: Errored',
+                  tag='errored',
+                  alert_type='error',
+                  text=res['msg'],
+                  host=host,
+                  extra_vars=self.playbook.extra_vars)
+
+        e.flush(self.stream)
+
+
+    def runner_on_ok(self, host, res):
+
+        #Task Run Succeeded for specific Host
+        changed = 'Changed' if res.pop('Changed', False) else 'ok'
+
+        if 'module_name' in res['invocation']:
+            module_name = res['invocation']['module_name']
+        else:
+            module_name = ''
+
+        e = Event(title='TASK %s: %s' % (changed, module_name),
+                  tag=changed,
+                  alert_type='info',
+                  text=json.dumps(res),
+                  host=host,
+                  extra_vars=self.playbook.extra_vars)
+
+        e.flush(self.stream)
+
+
+    def runner_on_skipped(self, host, item=None):
+
+        #Task Run Skipped for specific Host
+        e = Event(title='TASK: Skipped',
+                  tag='skipped',
+                  alert_type='info',
+                  text="Item: %s" % item,
+                  host=host,
+                  extra_vars=self.playbook.extra_vars)
+
+        e.flush(self.stream)
+
+
+    def runner_on_unreachable(self, host, res):
+
+         #Task Run Host Unreachable
+        e = Event(title='TASK: Host Unreachable: %s' % host,
+                  tag='unreachable',
+                  alert_type='error',
+                  text=res,
+                  host=host,
+                  extra_vars=self.playbook.extra_vars)
+
+        e.flush(self.stream)
+
+
+    def playbook_on_stats(self, stats):
+
+        data = {
+            'processed': stats.processed,
+            'ok': stats.ok,
+            'changed': stats.changed,
+            'dark': stats.dark,
+            'failures': stats.failures,
+            'skipped': stats.skipped
+        }
+
+        #Playbook Finished
+        e = Event(title='PLAYBOOK: Complete',
+                  tag='playbook_complete',
+                  alert_type='info',
+                  extra_vars=self.playbook.extra_vars,
+                  text=json.dumps(data))
+
+        e.flush(self.stream)
+        self.close_stream()
