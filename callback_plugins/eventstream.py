@@ -17,6 +17,7 @@ __metaclass__ = type
 #from ansible.plugins.callback import CallbackBase
 import json
 import os
+import yaml
 
 class Event(object):
 
@@ -246,10 +247,14 @@ class CallbackModule(object):
         for task in self.play._ds['tasks']:
             if 'action' in task:
                 task_count = task_count + 1
+            elif 'include' in task:
+                with open(task['include'], 'r') as stream:
+                    try:
+                        task_count = task_count + len(yaml.load(stream))
+                    except yaml.YAMLError as exc:
+                        print(exc)
 
-        #Add implicit task for fact gathering if appropriate
-        if 'gather_facts' in playbook and playbook['gather_facts'] or 'gather_facts' not in playbook:
-           task_count = task_count + 1
+                    stream.close()
 
         data = {
             'tasks':task_count

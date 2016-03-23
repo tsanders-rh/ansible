@@ -212,6 +212,7 @@ def pretty(stream):
                     if progress:
                         progress.next()
                         progress.finish()
+                        progress = None
                         print banner(event['title'])
                         print banner("RUN Statistics:")
                         print output_statistics(event['text'])
