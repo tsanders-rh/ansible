@@ -171,17 +171,44 @@ class CallbackModule(object):
 
         task_count = 0
 
-        for task in play._ds['tasks']:
-            if 'include' in task:
-                with open(task['include'], 'r') as stream:
-                    try:
-                        task_count = task_count + len(yaml.load(stream))
-                    except yaml.YAMLError as exc:
-                        print(exc)
+        if 'tasks' in play._ds:
+            for task in play._ds['tasks']:
+                if 'include' in task:
+                    with open(task['include'], 'r') as stream:
+                        try:
+                            task_count = task_count + len(yaml.load(stream))
+                        except yaml.YAMLError as exc:
+                            print(exc)
 
-                    stream.close()
-            else:
-                task_count = task_count + 1
+                        stream.close()
+                else:
+                    task_count = task_count + 1
+
+        if 'pre_tasks' in play._ds:
+            for task in play._ds['pre_tasks']:
+                if 'include' in task:
+                    with open(task['include'], 'r') as stream:
+                        try:
+                            task_count = task_count + len(yaml.load(stream))
+                        except yaml.YAMLError as exc:
+                            print(exc)
+
+                        stream.close()
+                else:
+                    task_count = task_count + 1
+
+        if 'post_tasks' in play._ds:
+            for task in play._ds['post_tasks']:
+                if 'include' in task:
+                    with open(task['include'], 'r') as stream:
+                        try:
+                            task_count = task_count + len(yaml.load(stream))
+                        except yaml.YAMLError as exc:
+                            print(exc)
+
+                        stream.close()
+                else:
+                    task_count = task_count + 1
 
         for role in play.roles:
 

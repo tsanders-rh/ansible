@@ -15,23 +15,26 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import json
+import yaml
 import pika
 
 class Event(object):
 
-    def __init__(self, title, tag, alert_type, text='', host=None, extra_vars=None):
+    def __init__(self, title, tag, alert_type, text='', host=None, vars=None, extra_vars=None):
 
         self.title = title
         self.tag = tag
         self.alert_type = alert_type
         self.text = text
         self.host = host
+        self.vars = vars
         self.extra_vars = extra_vars
 
     def serialize(self):
 
         event = {
             'extra_vars': self.extra_vars,
+            'vars': self.vars,
             'host': self.host,
             'text': self.text,
             'alert_type': self.alert_type,
@@ -163,20 +166,44 @@ class CallbackModule(object):
 
     def v2_playbook_on_task_start(self, task, is_conditional):
 
-        #Task Started
-        e = Event(title=task.get_name(),
-                  tag='task_start',
-                  alert_type='info',
-                  extra_vars=self.extra_vars)
+        if task.get_name() != "include":
 
-        e.send(self.channel, self.queue)
+            #Task Started
+            e = Event(title=task.get_name(),
+                      tag='task_start',
+                      alert_type='info',
+                      extra_vars=self.extra_vars)
+
+            e.send(self.channel, self.queue)
 
 
     def v2_playbook_on_play_start(self, play):
 
         vm = play.get_variable_manager()
 
-        task_count = len(play.get_tasks()[0])
+        task_count = 0
+
+        for task in play._ds['tasks']:
+            if 'include' in task:
+                with open(task['include'], 'r') as stream:
+                    try:
+                        task_count = task_count + len(yaml.load(stream))
+                    except yaml.YAMLError as exc:
+                        print(exc)
+
+                    stream.close()
+            else:
+                task_count = task_count + 1
+
+        for role in play.roles:
+
+            with open(role._role_path+"/tasks/main.yml", 'r') as stream:
+                try:
+                    task_count = task_count + len(yaml.load(stream))
+                except yaml.YAMLError as exc:
+                    print(exc)
+
+                stream.close()
 
         #Add implicit task for fact gathering if appropriate
         if play.gather_facts or play.gather_facts is None:
@@ -192,6 +219,7 @@ class CallbackModule(object):
                   tag='play_start',
                   alert_type='info',
                   text=json.dumps(data),
+                  vars=play.vars,
                   extra_vars=self.extra_vars)
 
         e.send(self.channel, self.queue)
@@ -245,17 +273,19 @@ class CallbackModule(object):
 
     def playbook_on_play_start(self, name):
 
-        playbook = self.playbook.playbook[0]
-
         task_count = 0
 
         for task in self.play._ds['tasks']:
             if 'action' in task:
                 task_count = task_count + 1
+            elif 'include' in task:
+                with open(task['include'], 'r') as stream:
+                    try:
+                        task_count = task_count + len(yaml.load(stream))
+                    except yaml.YAMLError as exc:
+                        print(exc)
 
-        #Add implicit task for fact gathering if appropriate
-        if 'gather_facts' in playbook and playbook['gather_facts'] or 'gather_facts' not in playbook:
-           task_count = task_count + 1
+                    stream.close()
 
         data = {
             'tasks':task_count
@@ -266,6 +296,7 @@ class CallbackModule(object):
                   tag='play_start',
                   alert_type='info',
                   text=json.dumps(data),
+                  vars=self.play.vars,
                   extra_vars=self.playbook.extra_vars)
 
         e.send(self.channel, self.queue)
